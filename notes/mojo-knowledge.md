@@ -24,12 +24,25 @@
 
   Left out of the extraction:
   - the MAX AI framework (max/, about 150 MB uncompressed)
-  - the C++ compiler source and compiler tests
+  - the compiler tests and tools (the compiler source itself was added later, see below)
   - the build system (Bazel)
   - the stdlib benchmarks and Unicode data tables
 
-  The release notes are already in mojo-release-notes/ 
+  The release notes are in notes/mojo-release-notes/
 
   The .md and .mdx files are plain Markdown and read fine in any editor; .mdx just adds a few web components.  check the docs and stdlib source there when you ask about an API.
 
-The zip file is retained for future reference of the MAX or GPU parts.
+## Compiler source: mojo-src/compiler/ (15 MB, added 2026-10-21)
+
+Extracted later from the same zip. The C++ files carry Apache 2.0 headers.
+
+| Folder | What it's for |
+|---|---|
+| compiler/Mojo/docs/compiler/ | Compiler design docs. Start with MojoCompilerWalkthrough.md (pipeline: parser -> lit dialect -> kgen dialect -> elaborator -> pop -> llvm). |
+| compiler/Mojo/include/Mojo/ | Headers and MLIR TableGen (.td) definitions: KGENDialect (types like !kgen.simd, !kgen.dtype), POPDialect, LITDialect, HLCFDialect, CODialect, MojoParser, Interpreter. |
+| compiler/Mojo/lib/ | C++ implementation: MojoParser, Elaborator, Interpreter, KGENToLLVM, Compiler/ObjectCompiler (LLVM pass pipeline in LLVMPassesPipeline.cpp). |
+| compiler/Support/ | Shared support library, e.g. Support/include/Support/ML/DType.h (the 1-byte C++ DType class). |
+
+Not extracted: compiler tests (Mojo/test, 9.4 MB), tools, unittests, and the MAX/AsyncRT parts.
+
+The zip file is now at /home/manas/modular-v26.6.0.zip, retained for the MAX or GPU parts and anything else not extracted.

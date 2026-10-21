@@ -24,7 +24,7 @@ comptime Int = Scalar[DType.int]
 comptime Float64 = Scalar[DType.float64]
 ```
 
-So `Int` is really `SIMD[DType.int, 1]`. Every numeric type is the same generic
+So `Int` is really `SIMD[DType.int, 1]` (explained in [int-type.md](int-type.md)). Every numeric type is the same generic
 `SIMD` struct, which is why scalar and vector code share one set of operators
 and methods.
 
@@ -123,10 +123,14 @@ print(v * 2)                       # [2.0, 4.0, 6.0, 8.0]
 var w = SIMD[.float32, 4](1.0)     # 1.1: leading-dot shorthand for DType.float32
 ```
 
+When Mojo emits vector instructions, and how the target CPU affects them:
+[simd-codegen.md](simd-codegen.md).
+
 `DType` is the enum of element types: `DType.bool`, `DType.int`, `DType.uint`,
 `DType.int8` ... `DType.int256`, `DType.uint8` ... `DType.uint256`,
 `DType.float16`, `DType.bfloat16`, `DType.float32`, `DType.float64`, plus the
-float8/float6/float4 formats above.
+float8/float6/float4 formats above. How `DType` is built and how each dtype
+maps to MLIR and LLVM types: [dtype.md](dtype.md).
 
 ### Conversions are explicit
 

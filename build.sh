@@ -14,8 +14,9 @@
 #   --no-cache     Compile with an empty Mojo cache, so compile-time code
 #                  (and compile-time print) runs again.
 #   -h, --help     Show this help.
-#   Any other option starting with '-' (e.g. -O0, -g) is passed to
-#   'mojo build'. Arguments after '--' are passed to the programs.
+#   Any other option starting with '-' (e.g. -O0, -g, -D ASSERT=none,
+#   --target-cpu x86-64) is passed to 'mojo build'. Arguments after '--'
+#   are passed to the programs.
 #
 # Only files that define 'def main(' are built; library modules are skipped.
 #
@@ -24,6 +25,7 @@
 #   ./build.sh L01                 build all programs in L01
 #   ./build.sh -r L01/dce.mojo     build and run one program
 #   ./build.sh -r -O0 L01/dce.mojo -- arg1 arg2
+#   ./build.sh -r -D ASSERT=none --target-cpu x86-64 L01/simd_search.mojo
 
 set -uo pipefail
 
@@ -49,6 +51,14 @@ while (($#)); do
         --no-cache) no_cache=true ;;
         -h|--help) usage; exit 0 ;;
         --) shift; prog_args=("$@"); break ;;
+        # 'mojo build' options that take a separate value, e.g. -D ASSERT=none.
+        -D|-I|--target-triple|--target-cpu|--target-features|--target-abi|\
+        --target-accelerator|--march|--mcpu|--mtune)
+            if (($# < 2)); then
+                echo "error: $1 needs a value" >&2
+                exit 1
+            fi
+            mojo_flags+=("$1" "$2"); shift ;;
         -*) mojo_flags+=("$1") ;;
         *) targets+=("$1") ;;
     esac
