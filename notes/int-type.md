@@ -157,6 +157,87 @@ Mojo does not vectorize plain loops automatically. See
 [simd-codegen.md](simd-codegen.md) for when vector instructions are used and
 how the target CPU affects them.
 
+## SIMD lanes
+
+A **lane** is one element slot in a `SIMD` vector. `SIMD[dtype, N]` holds N
+elements of the same type side by side, and one operation acts on all N at
+once:
+
+```
+a:      [ 10 | 20 | 30 | 40 ]
+b:      [  1 |  2 |  3 |  4 ]
+a + b:  [ 11 | 22 | 33 | 44 ]     one vpaddq instruction on a ymm register
+```
+
+A **1-lane SIMD** is a "vector" holding one element, which is just a single
+number. That's why `Int` (`SIMD[DType.int, 1]`) compiles to ordinary integer
+code. `a + b` at three lengths (`L01/simd_lanes.mojo`):
+
+| Lanes | Machine code for `a + b` |
+|---|---|
+| 1 | `leaq (%rdi,%rsi), %rax`: one plain integer add |
+| 4 | `vpaddq %ymm0, %ymm1, %ymm0`: one AVX2 add for all 4 lanes |
+| 64 | 16 x `vpaddq` on `ymm`: 64 lanes split into 16 groups of 4, since one register holds 4 Ints |
+
+The lane count is how many values the operation covers. The CPU has
+fixed-size registers (`ymm` holds 256 bits = 4 Ints, or 8 floats, or 32
+bytes). The compiler splits wider vectors to fit, as with 64 lanes, or uses
+plain integer registers for 1 lane.
+
+### Allowed lane counts: powers of 2, up to 2^15
+
+The rule is checked in two places:
+
+- **The stdlib** (`_simd_construction_checks` in `simd.mojo`):
+  `comptime assert size.is_power_of_two(), "simd width must be power of 2"`.
+- **The compiler** (`mojo-src/compiler/Mojo/lib/Transforms/KGENVerifier.cpp`):
+  it rejects any `!kgen.simd` type with a bad length.
+
+Tested:
+
+- `SIMD[DType.int, 65](1)` fails with `error: SIMD vector length must be a
+  power of two between 1 and 2^15, found '!kgen.simd<65, index>'`.
+- `SIMD[DType.int, 3](1)` fails with the same error.
+- Valid lengths are 1, 2, 4, 8, ... 32768; `SIMD[DType.float32, 1024]`
+  (4 KB) works.
+
+Why powers of 2: vector registers come in power-of-2 sizes (16, 32, 64 bytes)
+and lane counts, so the compiler can always split a vector evenly. Code with
+65 elements uses a 64-lane vector plus one leftover element, which is exactly
+the leftover handling that `vectorize` does with `closure[1]` (see
+[simd-codegen.md](simd-codegen.md)).
+
+One oddity: `size_of[SIMD[DType.int, 65]]()` compiled without error and
+returned 1024. The check only runs when a value is actually created or used,
+and that size is not meaningful. Don't rely on it.
+
+### Memory layout of a vector
+
+| Type | Size (bytes) | Alignment (bytes) |
+|---|---|---|
+| `SIMD[int8, 1]` | 1 | 1 |
+| `SIMD[int8, 32]` | 32 | 32 |
+| `SIMD[int, 1]` (`Int`) | 8 | 8 |
+| `SIMD[int, 4]` | 32 | 32 |
+| `SIMD[int, 64]` | 512 | 512 |
+| `SIMD[float32, 1024]` | 4096 | 4096 |
+
+- **Lanes are packed with no gaps or header.** Lane 0 is at the lowest
+  address. Reading `SIMD[DType.int, 4](10, 20, 30, 40)` as plain memory gave
+  `10 20 30 40`. The first 9 bytes were `10 0 0 0 0 0 0 0 20`: lane 0 as 8
+  little-endian bytes, then lane 1. Size is always lanes x element size.
+- **Alignment equals the full size.** A vector must start at an address that
+  is a multiple of its size, so a 4-lane Int vector sits on a 32-byte boundary
+  and fits one `ymm` load exactly. That's different from an array:
+  `Array[Int, 4]` is also 32 bytes, but only 8-byte aligned. To load vectors
+  from an array you use `unsafe_load[width=4]`, which by default assumes only
+  element alignment.
+- **Lanes are a compile-time property.** The `4` is part of the type and is
+  not stored anywhere.
+
+So the lane count sets the layout, but its purpose is the operations: one
+instruction (or a few, for wide vectors) handles all lanes together.
+
 ## Some history
 
 Before Mojo 1.0, `Int` was its own struct in `builtin/int.mojo`, separate

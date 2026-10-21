@@ -14,6 +14,7 @@ Test programs (their headers have the commands used below):
 - `L01/simd_search.mojo`: the same work with explicit SIMD.
 - `L01/autovec.mojo`: what Mojo vectorizes without being asked.
 - `L01/autovec_slp.mojo`: the straight-line (SLP) vectorizer.
+- `L01/add1024.mojo`: adding two 1024-element arrays, four ways, timed.
 
 ## 1. An `Int` array is not a SIMD vector
 
@@ -194,7 +195,87 @@ responsible for staying inside the list.
 Sorting is harder to vectorize by hand. The stdlib `sort()` is a normal
 comparison sort.
 
-## 7. Which CPU does `mojo build` target?
+## 7. Adding two 1024-element arrays
+
+**By default the addition is not vectorized.** A plain loop like
+`c[i] = a[i] + b[i]` adds one element at a time. You get vector addition only
+by asking for it. `L01/add1024.mojo` times four versions, each run 200,000
+times (stable across repeated runs):
+
+| Version | Default build | `-D ASSERT=none` | Vector instructions? |
+|---|---|---|---|
+| `List` plain loop | **~2,000 to 2,600 ns** | 185 ns | no (`addq`) |
+| `Array[Int, 1024]` plain loop | 180 ns | 180 ns | no (`addq`) |
+| `vectorize[4]` (stdlib helper) | **60 ns** | 60 ns | yes (`vpaddq ymm`) |
+| Hand-written SIMD loop | 105 ns | 105 ns | yes (`vpaddq ymm`) |
+
+That's about 3x faster vectorized than a scalar loop without bounds checks,
+and about 40x faster than the default `List` loop.
+
+What the table shows:
+
+1. **No vector instructions unless you ask.** Both plain loops compile to one
+   scalar `addq` per element, even with bounds checks off, because Mojo has no
+   loop vectorizer (section 2). The data layout doesn't matter: a `List` and an
+   `Array` are both plain memory, and neither is a SIMD vector.
+2. **Bounds checks make the default `List` loop very slow.** Each of the three
+   accesses (`a[i]`, `b[i]`, `c[i]`) does a compare and branch. Before each
+   one, the compiler also writes 6 values to the stack, the source-location
+   details for the error message. That is 18 extra stores per element:
+
+   ```
+   movq   $6, 16(%rsp)        # these 6 stores are repeated
+   movq   %r14, 8(%rsp)       # before each of the 3 checks,
+   movq   %rbx, 24(%rsp)      # on every element
+   movq   $39, 40(%rsp)
+   movq   %r15, 32(%rsp)
+   movq   %rbx, 48(%rsp)
+   cmpq   %rsi, %r9           # i < len(a)?
+   jae    .LBB0_7             # no: abort
+   ```
+
+3. **`Array[Int, 1024]` doesn't pay for bounds checks.** The size is known at
+   compile time, so the compiler proves `i < 1024` and removes the checks.
+4. **`vectorize` beat the hand-written SIMD loop.** Both use the same `vpaddq`
+   on `ymm`. `vectorize` computes the end of the vector part (`n & -4`) once,
+   giving a 6-instruction loop:
+
+   ```
+   .LBB2_2:
+       vmovdqu  (%rsi,%r10,8), %ymm0
+       vpaddq   (%rax,%r10,8), %ymm0, %ymm0
+       vmovdqu  %ymm0, (%rdi,%r10,8)
+       addq     $4, %r10
+       cmpq     %r9, %r10
+       jl       .LBB2_2
+   ```
+
+   The hand-written `while i + W <= n:` loop took 7, including an extra
+   register move. One extra instruction doesn't obviously explain 105 vs 60 ns;
+   the CPU may handle the loop shape differently. The exact cause can't be
+   pinned down from the assembly alone. In practice: prefer `vectorize` over a
+   hand-rolled loop.
+
+The vectorized version:
+
+```mojo
+from std.algorithm import vectorize
+
+def add_vectorize(mut c: List[Int], a: List[Int], b: List[Int]):
+    var pa = a.unsafe_ptr()
+    var pb = b.unsafe_ptr()
+    var pc = c.unsafe_ptr()
+    def step[width: Int](i: Int) {imm}:
+        pc.unsafe_store(i, pa.unsafe_load[width=width](i) + pb.unsafe_load[width=width](i))
+    vectorize[4](len(a), step)
+```
+
+`width` is 4 for the main loop and 1 for any leftover elements (1024 divides
+evenly, so there are none here). `{imm}` captures the pointers immutably.
+With `unsafe_ptr`/`unsafe_load` the code skips bounds checks entirely, so it's
+up to you that `a`, `b` and `c` are all at least `len(a)` long.
+
+## 8. Which CPU does `mojo build` target?
 
 **The host CPU, by default.** `mojo build --print-effective-target file.mojo`
 shows it:
@@ -226,7 +307,7 @@ The compiler splits each `SIMD` operation into what the target supports:
   instructions. So `SIMD` code never needs vector hardware to work; it is just
   slower without it.
 
-## 8. Running on a CPU without the instructions
+## 9. Running on a CPU without the instructions
 
 A host-tuned binary can contain AVX2 instructions. On a CPU without AVX2, the
 first such instruction stops the program with "Illegal instruction"
@@ -258,7 +339,7 @@ So a `--target-cpu x86-64` build contains no AVX in your own code
 CPU because of the libraries. Whether the libraries check the CPU before
 using those instructions was not tested.
 
-## 9. Separate binaries?
+## 10. Separate binaries?
 
 - **For your own machine:** no. The default (host CPU) build is the fastest
   for it.
@@ -282,6 +363,9 @@ using those instructions was not tested.
 - `Int` is `SIMD[DType.int, 1]` so one generic function can serve both the
   vector part (`width = N`) and the leftover part (`width = 1`) of a loop, as
   in `vectorize`. It costs nothing: width 1 compiles to scalar code.
+- Adding two 1024-element Int arrays: a plain loop is scalar (180 ns
+  unchecked, ~2,000+ ns for a bounds-checked `List`); `vectorize[4]` takes
+  60 ns. Fixed-size `Array` loops get their bounds checks removed for free.
 - `mojo build` targets the host CPU by default. Use `--target-cpu` for
   portable binaries.
 - `SIMD` code works on any target; the compiler splits it into narrower or
