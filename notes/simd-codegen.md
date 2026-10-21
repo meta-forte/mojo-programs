@@ -236,6 +236,7 @@ What the table shows:
 
 3. **`Array[Int, 1024]` doesn't pay for bounds checks.** The size is known at
    compile time, so the compiler proves `i < 1024` and removes the checks.
+   How to avoid bounds-check cost in general: [bounds-checks.md](bounds-checks.md).
 4. **`vectorize` beat the hand-written SIMD loop.** Both use the same `vpaddq`
    on `ymm`. `vectorize` computes the end of the vector part (`n & -4`) once,
    giving a 6-instruction loop:
