@@ -1,0 +1,36 @@
+Test results for L01/dce.mojo (Mojo 1.1.0, 2026-10-21)
+
+== 1. Build with an empty cache (forces a real compile)
+$ XDG_CACHE_HOME=<empty dir> mojo build -o dce dce.mojo
+comptime_used ran
+
+== 2. Run the program
+$ ./dce
+A = 1
+runtime_called
+rt = 4
+
+== 3. Symbols in the binary (nm)
+$ nm dce | grep -E "comptime_|never_called|runtime_called"
+0000000000401200 t dce::runtime_called()
+
+== 4. Per-function check (count of matches)
+comptime_used    nm:0  strings:0
+comptime_unused  nm:0  strings:0
+never_called     nm:0  strings:0
+runtime_called   nm:1  strings:2
+
+== 5. Debug build (-O0), empty cache
+comptime_used ran
+comptime_used    nm:0
+comptime_unused  nm:0
+never_called     nm:0
+runtime_called   nm:1
+
+== 6. Cache behavior (normal cache, code unchanged)
+-- delete executable, rebuild:
+(build output above, empty = no compile-time print)
+-- build to a new output name:
+(build output above, empty = no compile-time print)
+-- build with an empty cache folder:
+comptime_used ran

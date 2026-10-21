@@ -1,0 +1,45 @@
+# ---- Build output -------------------------------------------------------
+# All builds go here (see build.sh).
+/build/
+
+# Precompiled Mojo packages (mojo precompile) and the pre-1.0 format.
+*.mojoc
+*.mojopkg
+
+# Other compiler outputs (mojo build --emit ...).
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.ll
+*.bc
+
+# ---- Environments -------------------------------------------------------
+# Python venv symlink (points to ~/venv).
+.venv
+venv/
+
+# pixi / magic environments (Modular's package managers). Keep pixi config.
+.pixi/*
+!.pixi/config.toml
+.magic/
+
+# Python bytecode (Python interop).
+__pycache__/
+*.py[cod]
+
+# ---- Editors / OS -------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# ---- Third-party reference material -------------------------------------
+# Upstream Modular source archive (100 MB, over GitHub's file size limit)
+# and the material extracted from it / downloaded from Modular.
+# Remove these lines to version them.
+/modular-v*.zip
+/mojo-src/
+/notes/mojo-release-notes/
